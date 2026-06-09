@@ -51,9 +51,12 @@ L'applicazione avrà solo 3 schermate principali per garantire la massima sempli
 
 Android Nativo con Kotlin e Jetpack Compose. Per il database locale usa Room DB. Per il caricamento delle immagini usa Coil.
 
-## Archiviazione Locale:
+## Archiviazione Locale e Backup Semplificato:
 
 Le immagini selezionate dalla galleria devono essere copiate e salvate nella cartella di archiviazione interna dell'applicazione per garantire che rimangano accessibili anche se l'utente le cancella dalla galleria principale. I dettagli (percorso immagine, descrizione, data) vanno salvati su Room DB.
+
+**Backup e Ripristino:**
+Per garantire che l'utente non perda i propri dati in caso di cambio telefono o reset, l'applicazione integra un sistema di Esportazione/Importazione manuale. Dalle impostazioni, l'utente può esportare un file compresso (.zip) contenente il database SQLite e le immagini locali. Questo file viene salvato tramite il selettore di file nativo di Android (Storage Access Framework), permettendo il salvataggio nella memoria interna, su SD, oppure direttamente su app Cloud (come Google Drive) se installate sul dispositivo. Successivamente, questo stesso file ZIP può essere importato per ripristinare interamente il diario visivo.
 
 ## UI/UX Design (Stile minimale, pulito, moderno ed elegante):
 

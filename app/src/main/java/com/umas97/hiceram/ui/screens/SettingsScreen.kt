@@ -22,8 +22,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import com.umas97.hiceram.data.ThemeMode
 import com.umas97.hiceram.ui.theme.AccentColors
+import com.umas97.hiceram.backup.BackupManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import android.content.Intent
+import com.umas97.hiceram.MainActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +63,42 @@ fun SettingsScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
+        val context = LocalContext.current
+        val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+        
+        val exportLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("application/zip")
+        ) { uri ->
+            uri?.let {
+                coroutineScope.launch {
+                    val success = BackupManager.createBackup(context, it)
+                    if (success) {
+                        Toast.makeText(context, "Backup esportato con successo!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Errore durante l'esportazione.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        
+        val importLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            uri?.let {
+                coroutineScope.launch {
+                    val success = BackupManager.restoreBackup(context, it)
+                    if (success) {
+                        Toast.makeText(context, "Ripristino completato! L'app si riavvierà.", Toast.LENGTH_LONG).show()
+                        val intent = Intent(context, MainActivity::class.java)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        context.startActivity(intent)
+                        Runtime.getRuntime().exit(0)
+                    } else {
+                        Toast.makeText(context, "Errore durante il ripristino.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -150,6 +197,45 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+
+            // Sezione Backup e Ripristino
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    text = "Backup e Ripristino",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Esporta un file .zip con i tuoi dati per salvarli al sicuro (es. su Google Drive o PC) e importalo in caso di cambio telefono.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { 
+                            val date = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
+                            exportLauncher.launch("hicEramBK_$date.zip") 
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                    ) {
+                        Text("Esporta")
+                    }
+                    Button(
+                        onClick = { importLauncher.launch(arrayOf("application/zip")) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                    ) {
+                        Text("Importa")
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.weight(1f))

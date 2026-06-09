@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -100,6 +101,16 @@ fun FeedScreen(
     val exitMultiSelect = {
         selectedMoments = emptySet()
         isMultiSelectMode = false
+    }
+
+    BackHandler(enabled = isMultiSelectMode || showTrash || showOnlyFavorites) {
+        if (isMultiSelectMode) {
+            exitMultiSelect()
+        } else if (showTrash) {
+            showTrash = false
+        } else if (showOnlyFavorites) {
+            showOnlyFavorites = false
+        }
     }
 
     // Filtra i momenti in base allo stato attivo/cestino/preferiti

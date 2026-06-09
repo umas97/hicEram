@@ -27,4 +27,9 @@ sealed class Screen {
      * Schermata delle impostazioni.
      */
     object Settings : Screen()
+
+    /**
+     * Schermata della mappa con i ricordi.
+     */
+    object Map : Screen()
 }

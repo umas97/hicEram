@@ -78,6 +78,10 @@ dependencies {
     // Coil (Image Loading)
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // EXIF data and osmdroid
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+    implementation("org.osmdroid:osmdroid-android:6.1.18")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

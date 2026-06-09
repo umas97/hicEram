@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Delete
@@ -61,6 +64,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,14 +85,17 @@ fun FeedScreen(
     viewModel: MomentViewModel,
     onNavigateToAdd: () -> Unit,
     onNavigateToDetail: (Moment) -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToMap: () -> Unit
 ) {
     val context = LocalContext.current
     val moments by viewModel.moments.collectAsState()
+    val onThisDayMoments by viewModel.onThisDayMoments.collectAsState()
 
     // Stati filtri e viste
     var showOnlyFavorites by remember { mutableStateOf(false) }
     var showTrash by remember { mutableStateOf(false) }
+    var showOnThisDayFilter by remember { mutableStateOf(false) }
     
     // Stati selezione multipla
     var isMultiSelectMode by remember { mutableStateOf(false) }
@@ -103,22 +111,28 @@ fun FeedScreen(
         isMultiSelectMode = false
     }
 
-    BackHandler(enabled = isMultiSelectMode || showTrash || showOnlyFavorites) {
+    BackHandler(enabled = isMultiSelectMode || showTrash || showOnlyFavorites || showOnThisDayFilter) {
         if (isMultiSelectMode) {
             exitMultiSelect()
         } else if (showTrash) {
             showTrash = false
         } else if (showOnlyFavorites) {
             showOnlyFavorites = false
+        } else if (showOnThisDayFilter) {
+            showOnThisDayFilter = false
         }
     }
 
     // Filtra i momenti in base allo stato attivo/cestino/preferiti
-    val displayedMoments = moments.filter { moment ->
-        if (showTrash) {
-            moment.isInTrash
-        } else {
-            !moment.isInTrash && (!showOnlyFavorites || moment.isFavorite)
+    val displayedMoments = if (showOnThisDayFilter) {
+        onThisDayMoments
+    } else {
+        moments.filter { moment ->
+            if (showTrash) {
+                moment.isInTrash
+            } else {
+                !moment.isInTrash && (!showOnlyFavorites || moment.isFavorite)
+            }
         }
     }
 
@@ -126,7 +140,7 @@ fun FeedScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    if (!isMultiSelectMode && !showTrash) {
+                    if (!isMultiSelectMode && !showTrash && !showOnThisDayFilter) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 painter = androidx.compose.ui.res.painterResource(id = com.umas97.hiceram.R.drawable.ic_crystal),
@@ -143,7 +157,12 @@ fun FeedScreen(
                         }
                     } else {
                         Text(
-                            text = if (isMultiSelectMode) "${selectedMoments.size} selezionati" else "Cestino",
+                            text = when {
+                                isMultiSelectMode -> "${selectedMoments.size} selezionati"
+                                showTrash -> "Cestino"
+                                showOnThisDayFilter -> "Accadde Oggi"
+                                else -> ""
+                            },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -154,8 +173,12 @@ fun FeedScreen(
                         IconButton(onClick = exitMultiSelect) {
                             Icon(imageVector = Icons.Default.Close, contentDescription = "Annulla selezione")
                         }
-                    } else if (showTrash) {
-                        IconButton(onClick = { showTrash = false; exitMultiSelect() }) {
+                    } else if (showTrash || showOnThisDayFilter) {
+                        IconButton(onClick = { 
+                            showTrash = false
+                            showOnThisDayFilter = false
+                            exitMultiSelect() 
+                        }) {
                             Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Torna al feed")
                         }
                     }
@@ -196,8 +219,8 @@ fun FeedScreen(
                         }
                     } else {
                         // Icone quando NON siamo in selezione multipla
-                        if (!showTrash) {
-                            // Filtro Preferiti (mostra solo se non siamo nel cestino)
+                        if (!showTrash && !showOnThisDayFilter) {
+                            // Filtro Preferiti (mostra solo se non siamo nel cestino o accadde oggi)
                             IconButton(onClick = { showOnlyFavorites = !showOnlyFavorites }) {
                                 Icon(
                                     imageVector = if (showOnlyFavorites) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -208,6 +231,10 @@ fun FeedScreen(
                             // Bottone per entrare nel Cestino
                             IconButton(onClick = { showTrash = true; showOnlyFavorites = false }) {
                                 Icon(imageVector = Icons.Outlined.Delete, contentDescription = "Apri cestino")
+                            }
+                            // Bottone Mappa
+                            IconButton(onClick = onNavigateToMap) {
+                                Icon(imageVector = Icons.Default.Place, contentDescription = "Mappa dei ricordi")
                             }
                         }
                         IconButton(onClick = onNavigateToSettings) {
@@ -276,6 +303,76 @@ fun FeedScreen(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    if (onThisDayMoments.isNotEmpty() && !showTrash && !showOnThisDayFilter && !showOnlyFavorites) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            val allImagesOnThisDay = remember(onThisDayMoments) {
+                                onThisDayMoments.flatMap { it.imagePaths }
+                            }
+                            val pagerState = rememberPagerState(
+                                initialPage = 0,
+                                pageCount = { allImagesOnThisDay.size }
+                            )
+
+                            LaunchedEffect(pagerState) {
+                                if (allImagesOnThisDay.isNotEmpty()) {
+                                    while (true) {
+                                        delay(3000)
+                                        val nextPage = (pagerState.currentPage + 1) % allImagesOnThisDay.size
+                                        pagerState.animateScrollToPage(nextPage)
+                                    }
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(3f)
+                                    .padding(bottom = 4.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showOnThisDayFilter = true },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    if (allImagesOnThisDay.isNotEmpty()) {
+                                        HorizontalPager(
+                                            state = pagerState,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) { page ->
+                                            val imagePath = allImagesOnThisDay[page]
+                                            AsyncImage(
+                                                model = File(imagePath),
+                                                contentDescription = "Ricordo",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.45f))
+                                        )
+                                    }
+
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = "Accadde Oggi",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = if (allImagesOnThisDay.isNotEmpty()) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Riscopri ${onThisDayMoments.size} ricordi del passato",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (allImagesOnThisDay.isNotEmpty()) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     items(displayedMoments, key = { it.id }) { moment ->
                         val isSelected = selectedMoments.contains(moment)
                         MomentGridItem(
@@ -500,6 +597,29 @@ fun MomentGridItem(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            // Overlay posizione
+            if (!moment.locationName.isNullOrEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(
+                            androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))
+                            )
+                        )
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = moment.locationName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
             }
 
             // Overlay di selezione stile galleria premium

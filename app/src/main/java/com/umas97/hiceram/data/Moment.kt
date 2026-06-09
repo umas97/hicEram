@@ -20,7 +20,10 @@ data class Moment(
     val description: String,
     val timestamp: Long,
     val isFavorite: Boolean = false,
-    val isInTrash: Boolean = false
+    val isInTrash: Boolean = false,
+    val locationName: String? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null
 ) {
     /**
      * Ritorna la lista dei singoli percorsi delle immagini del ricordo.

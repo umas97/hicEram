@@ -9,6 +9,8 @@ import com.umas97.hiceram.data.MomentRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
+import java.util.Calendar
 import kotlinx.coroutines.launch
 
 /**
@@ -28,11 +30,37 @@ class MomentViewModel(private val repository: MomentRepository) : ViewModel() {
     )
 
     /**
+     * Flusso di dati che contiene solo i ricordi di esattamente 1, 2 o 5 anni fa rispetto alla data odierna.
+     */
+    val onThisDayMoments: StateFlow<List<Moment>> = repository.allMoments.map { momentsList ->
+        val today = Calendar.getInstance()
+        val todayDay = today.get(Calendar.DAY_OF_MONTH)
+        val todayMonth = today.get(Calendar.MONTH)
+        val todayYear = today.get(Calendar.YEAR)
+
+        momentsList.filter { moment ->
+            if (moment.isInTrash) return@filter false
+
+            val momentCalendar = Calendar.getInstance().apply { timeInMillis = moment.timestamp }
+            val momentDay = momentCalendar.get(Calendar.DAY_OF_MONTH)
+            val momentMonth = momentCalendar.get(Calendar.MONTH)
+            val momentYear = momentCalendar.get(Calendar.YEAR)
+
+            val diffYears = todayYear - momentYear
+            momentDay == todayDay && momentMonth == todayMonth && (diffYears == 1 || diffYears == 2 || diffYears == 5)
+        }
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    /**
      * Salva un nuovo momento copiando la lista di immagini ed inserendo i dettagli nel DB con data manuale.
      */
-    fun addMoment(imageUris: List<Uri>, description: String, timestamp: Long, onComplete: (Boolean) -> Unit) {
+    fun addMoment(imageUris: List<Uri>, description: String, timestamp: Long, locationName: String, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val success = repository.saveMoment(imageUris, description, timestamp)
+            val success = repository.saveMoment(imageUris, description, timestamp, locationName)
             onComplete(success)
         }
     }
@@ -53,6 +81,17 @@ class MomentViewModel(private val repository: MomentRepository) : ViewModel() {
     fun updateMoment(moment: Moment, onComplete: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
             val success = repository.updateMoment(moment)
+            onComplete(success)
+        }
+    }
+
+    /**
+     * Aggiorna i dettagli di un momento inclusa la posizione.
+     */
+    fun updateMomentDetails(moment: Moment, newDescription: String, newTimestamp: Long, newLocationName: String, onComplete: (Boolean) -> Unit = {}) {
+        viewModelScope.launch {
+            val updatedMoment = moment.copy(description = newDescription, timestamp = newTimestamp)
+            val success = repository.updateMomentWithLocation(updatedMoment, newLocationName)
             onComplete(success)
         }
     }

@@ -20,13 +20,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.outlined.AddAPhoto
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material3.Button
@@ -48,6 +51,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.onFocusChanged
+import android.location.Geocoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,9 +88,43 @@ fun AddScreen(
     val context = LocalContext.current
     var selectedImageUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var description by remember { mutableStateOf("") }
+    var locationInput by remember { mutableStateOf("") }
     var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
     var isSaving by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
+
+    var isLocationFocused by remember { mutableStateOf(false) }
+    var locationSuggestions by remember { mutableStateOf(emptyList<String>()) }
+    var showSuggestions by remember { mutableStateOf(false) }
+
+    LaunchedEffect(locationInput) {
+        if (locationInput.length >= 3 && isLocationFocused) {
+            delay(500) // Debounce
+            withContext(Dispatchers.IO) {
+                try {
+                    val geocoder = Geocoder(context, Locale.getDefault())
+                    @Suppress("DEPRECATION")
+                    val addresses = geocoder.getFromLocationName(locationInput, 5)
+                    val suggestions = addresses?.mapNotNull { address ->
+                        val parts = listOfNotNull(address.locality, address.adminArea, address.countryName)
+                        if (parts.isNotEmpty()) parts.joinToString(", ") else address.featureName
+                    }?.distinct() ?: emptyList()
+                    
+                    withContext(Dispatchers.Main) {
+                        locationSuggestions = suggestions
+                        showSuggestions = suggestions.isNotEmpty()
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        locationSuggestions = emptyList()
+                        showSuggestions = false
+                    }
+                }
+            }
+        } else {
+            showSuggestions = false
+        }
+    }
 
     // Stati per il Drag and Drop reordering
     var draggingIndex by remember { mutableStateOf<Int?>(null) }
@@ -128,38 +173,141 @@ fun AddScreen(
                 )
             )
         },
+        bottomBar = {
+            // Bottone di Salvataggio
+            Button(
+                onClick = {
+                    if (selectedImageUris.isNotEmpty() && !isSaving) {
+                        isSaving = true
+                        viewModel.addMoment(selectedImageUris, description, selectedDate, locationInput) { success ->
+                            isSaving = false
+                            if (success) {
+                                onNavigateBack()
+                            } else {
+                                Toast.makeText(context, "Errore durante il salvataggio", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                },
+                enabled = selectedImageUris.isNotEmpty() && !isSaving,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 12.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                } else {
+                    Text(
+                        text = "Salva nei ricordi",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
+        },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Selettore della Data (Manuale)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { showDatePicker = true }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CalendarToday,
-                    contentDescription = "Calendario",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "Data del ricordo: ${formatDate(selectedDate)}",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+            // Selettore della Data e Posizione (Manuale)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Data
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { showDatePicker = true }
+                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CalendarToday,
+                        contentDescription = "Calendario",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formatDate(selectedDate),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+
+                // Posizione
+                Box(modifier = Modifier.weight(1f)) {
+                    androidx.compose.foundation.text.BasicTextField(
+                        value = locationInput,
+                        onValueChange = { locationInput = it },
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onBackground),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .onFocusChanged { isLocationFocused = it.isFocused }
+                            .padding(horizontal = 12.dp, vertical = 14.dp),
+                        decorationBox = { innerTextField ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Place,
+                                    contentDescription = "Posizione",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                if (locationInput.isEmpty() && !isLocationFocused) {
+                                    Text(
+                                        text = "Posizione...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        }
+                    )
+                    
+                    DropdownMenu(
+                        expanded = showSuggestions,
+                        onDismissRequest = { showSuggestions = false },
+                        modifier = Modifier.fillMaxWidth(0.5f),
+                        properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+                    ) {
+                        locationSuggestions.forEach { suggestion ->
+                            DropdownMenuItem(
+                                text = { Text(suggestion) },
+                                onClick = {
+                                    locationInput = suggestion
+                                    showSuggestions = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -360,48 +508,7 @@ fun AddScreen(
                 textStyle = MaterialTheme.typography.bodyLarge
             )
 
-            Spacer(modifier = Modifier.weight(1.5f))
-
-            // Bottone di Salvataggio
-            Button(
-                onClick = {
-                    if (selectedImageUris.isNotEmpty() && !isSaving) {
-                        isSaving = true
-                        viewModel.addMoment(selectedImageUris, description, selectedDate) { success ->
-                            isSaving = false
-                            if (success) {
-                                onNavigateBack()
-                            } else {
-                                Toast.makeText(context, "Errore durante il salvataggio", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                },
-                enabled = selectedImageUris.isNotEmpty() && !isSaving,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(bottom = 12.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            ) {
-                if (isSaving) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                } else {
-                    Text(
-                        text = "Salva nei ricordi",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-            }
+            Spacer(modifier = Modifier.height(20.dp))
         }
     }
 

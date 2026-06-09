@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
@@ -54,10 +55,21 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import android.location.Geocoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -252,11 +264,20 @@ fun DetailScreen(
         TopAppBar(
             modifier = Modifier.zIndex(50f),
             title = {
-                Text(
-                    text = formatTimestamp(liveMoment.timestamp),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                Column {
+                    Text(
+                        text = formatTimestamp(liveMoment.timestamp),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!liveMoment.locationName.isNullOrEmpty()) {
+                        Text(
+                            text = liveMoment.locationName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             },
             navigationIcon = {
                 IconButton(onClick = onNavigateBack) {
@@ -340,8 +361,42 @@ fun DetailScreen(
     // Dialog di Modifica Ricordo (Descrizione e Data)
     if (showEditDialog) {
         var editDescription by remember { mutableStateOf(liveMoment.description) }
+        var editLocation by remember { mutableStateOf(liveMoment.locationName ?: "") }
         var editDate by remember { mutableStateOf(liveMoment.timestamp) }
         var showDatePicker by remember { mutableStateOf(false) }
+        
+        var isLocationFocused by remember { mutableStateOf(false) }
+        var locationSuggestions by remember { mutableStateOf(emptyList<String>()) }
+        var showSuggestions by remember { mutableStateOf(false) }
+
+        LaunchedEffect(editLocation) {
+            if (editLocation.length >= 3 && isLocationFocused) {
+                delay(500) // Debounce
+                withContext(Dispatchers.IO) {
+                    try {
+                        val geocoder = Geocoder(context, Locale.getDefault())
+                        @Suppress("DEPRECATION")
+                        val addresses = geocoder.getFromLocationName(editLocation, 5)
+                        val suggestions = addresses?.mapNotNull { address ->
+                            val parts = listOfNotNull(address.locality, address.adminArea, address.countryName)
+                            if (parts.isNotEmpty()) parts.joinToString(", ") else address.featureName
+                        }?.distinct() ?: emptyList()
+                        
+                        withContext(Dispatchers.Main) {
+                            locationSuggestions = suggestions
+                            showSuggestions = suggestions.isNotEmpty()
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            locationSuggestions = emptyList()
+                            showSuggestions = false
+                        }
+                    }
+                }
+            } else {
+                showSuggestions = false
+            }
+        }
         
         AlertDialog(
             onDismissRequest = { showEditDialog = false },
@@ -386,13 +441,58 @@ fun DetailScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Posizione TextField con Dropdown
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        TextField(
+                            value = editLocation,
+                            onValueChange = { editLocation = it },
+                            label = { Text("Posizione") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { isLocationFocused = it.isFocused },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Default.Place, contentDescription = "Posizione")
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onBackground
+                            )
+                        )
+                        
+                        DropdownMenu(
+                            expanded = showSuggestions,
+                            onDismissRequest = { showSuggestions = false },
+                            modifier = Modifier.fillMaxWidth(0.8f),
+                            properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+                        ) {
+                            locationSuggestions.forEach { suggestion ->
+                                DropdownMenuItem(
+                                    text = { Text(suggestion) },
+                                    onClick = {
+                                        editLocation = suggestion
+                                        showSuggestions = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showEditDialog = false
-                        viewModel.updateMoment(liveMoment.copy(description = editDescription, timestamp = editDate))
+                        viewModel.updateMomentDetails(
+                            moment = liveMoment,
+                            newDescription = editDescription,
+                            newTimestamp = editDate,
+                            newLocationName = editLocation
+                        )
                     }
                 ) {
                     Text("Salva")

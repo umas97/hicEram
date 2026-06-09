@@ -21,6 +21,7 @@ import com.umas97.hiceram.ui.screens.AddScreen
 import com.umas97.hiceram.ui.screens.DetailScreen
 import com.umas97.hiceram.ui.screens.FeedScreen
 import com.umas97.hiceram.ui.screens.SettingsScreen
+import com.umas97.hiceram.ui.screens.MapScreen
 import com.umas97.hiceram.ui.theme.AccentColors
 import com.umas97.hiceram.ui.theme.HicEramTheme
 import com.umas97.hiceram.ui.viewmodel.MomentViewModel
@@ -70,7 +71,8 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 onNavigateToAdd = { currentScreen = Screen.Add },
                                 onNavigateToDetail = { moment -> currentScreen = Screen.Detail(moment) },
-                                onNavigateToSettings = { currentScreen = Screen.Settings }
+                                onNavigateToSettings = { currentScreen = Screen.Settings },
+                                onNavigateToMap = { currentScreen = Screen.Map }
                             )
                         }
                         is Screen.Add -> {
@@ -93,6 +95,13 @@ class MainActivity : ComponentActivity() {
                                 onColorSelected = { appPreferences.setColorIndex(it) },
                                 onThemeModeSelected = { appPreferences.setThemeMode(it) },
                                 onNavigateBack = { currentScreen = Screen.Feed }
+                            )
+                        }
+                        is Screen.Map -> {
+                            MapScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { currentScreen = Screen.Feed },
+                                onNavigateToDetail = { moment -> currentScreen = Screen.Detail(moment) }
                             )
                         }
                     }
